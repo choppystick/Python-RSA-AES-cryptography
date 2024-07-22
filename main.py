@@ -1,4 +1,5 @@
 import os
+import sys
 import base64
 from Cryptodome.Hash import SHA512
 from Cryptodome.PublicKey import RSA
@@ -310,10 +311,26 @@ if __name__ == "__main__":
         name_key = base64.b64encode(get_random_bytes(32)).decode("utf-8")  # key for the name of the files
         salt = get_random_bytes(16)  # salt for hashing
 
-        # password = input("Enter a password to secure your private key: "
-        save_key(private_key, 'private_key.pem')
-        save_key(public_key, 'public_key.pem')
-        save_key(name_key.encode('utf-8'), 'name_key.pem', is_name_key=True, salt=salt)
+        while True:
+            try:
+                choice = input("Do you want to secure your keys with a password? Enter only Y, y or N ,n: ").lower()
+                if choice not in ["y", "n"]:
+                    raise ValueError("Please enter only Y, y or N, n.")
+                break
+
+            except ValueError as e:
+                print(f"Invalid input: {e}")
+
+        if choice == "n":
+            save_key(private_key, 'private_key.pem')
+            save_key(public_key, 'public_key.pem')
+            save_key(name_key.encode('utf-8'), 'name_key.pem', is_name_key=True, salt=salt)
+
+        if choice == "y":
+            password = input("Enter your password here. Remember this password: ")
+            save_key(private_key, 'private_key.pem', password=password)
+            save_key(public_key, 'public_key.pem', password=password)
+            save_key(name_key.encode('utf-8'), 'name_key.pem', is_name_key=True, salt=salt)
 
         directory = get_directory()
         try:
@@ -326,8 +343,30 @@ if __name__ == "__main__":
             print(f"An exception occurred: {e}")
 
     if choice == 1:
-        loaded_private_key = load_key('private_key.pem')
-        salt, loaded_name_key = load_key('name_key.pem', is_name_key=True)
+        while True:
+            try:
+                choice = input("Did you secure your keys with a password? Enter only Y, y or N ,n: ").lower()
+                if choice not in ["y", "n"]:
+                    raise ValueError("Please enter only Y, y or N, n.")
+                break
+
+            except ValueError as e:
+                print(f"Invalid input: {e}")
+
+        if choice == "n":
+            loaded_private_key = load_key('private_key.pem')
+            salt, loaded_name_key = load_key('name_key.pem', is_name_key=True)
+
+        if choice == "y":
+            password = input("Enter your password here: ")
+            try:
+                loaded_private_key = load_key('private_key.pem', password=password)
+
+            except ValueError as e:
+                print(f"Invalid password.")
+                sys.exit()
+
+            salt, loaded_name_key = load_key('name_key.pem', is_name_key=True)
 
         with open("dir.txt", "r") as file:
             dirs = file.read()
