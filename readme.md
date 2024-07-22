@@ -89,7 +89,7 @@ This encryption program is a powerful tool that can permanently alter your files
 
 - **Legal Considerations**: Be aware of the legal implications of using encryption in your jurisdiction. Some countries have laws regulating the use of encryption. 
 
-- **Misuses and Ethical Considerations**: This program is meant to be a demonstration of AES and RSA encryption. Do not attempt to use this program for unethical purposes. Misuse of this program to delete others files or as a ransomware is highly illegal and will result in severe consequences.
+- **Misuses and Ethical Considerations**: This program is meant to be a demonstration of AES and RSA encryption. Do not attempt to use this program for any unethical purposes. Misuse of this program to alter files without permission or as a ransomware is highly illegal and will result in severe legal consequences.
 
 By using this program, you acknowledge that you understand these risks and take full responsibility for any consequences resulting from its use. You also acknowledge that the misuse of this program is highly illegal and unethical.
 
