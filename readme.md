@@ -93,6 +93,11 @@ This encryption program is a powerful tool that can permanently alter your files
 
 By using this program, you acknowledge that you understand these risks and take full responsibility for any consequences resulting from its use. You also acknowledge that the misuse of this program is highly illegal and unethical.
 
+## TO-DO
+- Update readme.md
+- Store keys in a server instead of on the local host
+
+
 ## Contributing
 
 Contributions to this project are welcome. Please fork the repository and submit a pull request with your changes.
