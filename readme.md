@@ -2,6 +2,8 @@
 
 This Python program provides a secure way to encrypt and decrypt files and directories using RSA and AES encryption algorithms. It's designed as a demonstration of cryptographical applications and for users who need to protect sensitive data on their local machine.
 
+Warning: Do not run the main.py file with an important directory as it may cause irreparable file loss. 
+
 ## Features
 
 - Encrypt and decrypt entire directories
