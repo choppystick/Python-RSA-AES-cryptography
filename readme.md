@@ -1,6 +1,6 @@
 # File Encryption with RSA-AES
 
-This Python program provides a secure way to encrypt and decrypt files and directories using RSA and AES encryption algorithms. It's designed for users who need to protect sensitive data on their local machine.
+This Python program provides a secure way to encrypt and decrypt files and directories using RSA and AES encryption algorithms. It's designed as a demonstration of cryptographical applications and for users who need to protect sensitive data on their local machine.
 
 ## Features
 
