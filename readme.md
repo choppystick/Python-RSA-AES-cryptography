@@ -31,7 +31,6 @@ pip install pycryptodome
 2. Navigate to the project directory:
    ```
    cd Python-RSA-AES-cryptography
-
    ```
 
 ## Usage
