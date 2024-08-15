@@ -16,20 +16,48 @@ class Program:
         self.root = None
 
     def derive_session_key(self, key: str, salt: bytes) -> bytes:
+        """
+        Derives a session key using PBKDF2.
+
+        :param key : The base key to derive from.
+        :param salt : Salt for the key derivation.
+
+        Returns:
+            bytes: The derived session key.
+        """
         if self.session_derived_key is None:
             self.session_derived_key = PBKDF2(key, salt, 32, count=1000000, hmac_hash_module=SHA512)
         return self.session_derived_key
 
     def clear_session_key(self) -> None:
+        """
+        Clears the global session key.
+        """
         self.session_derived_key = None
 
     def generate_keys(self) -> None:
+        """
+        Generates RSA public and private keys.
+
+        Returns:
+            tuple[bytes, bytes]: A tuple containing (public_key, private_key).
+        """
         key = RSA.generate(2048)
         self.public_key = key.public_key().export_key()
         self.private_key = key.export_key()
 
-    def save_key(self, key: bytes, filename: str, password: str = None, is_name_key: bool = False,
+    @staticmethod
+    def save_key(key: bytes, filename: str, password: str = None, is_name_key: bool = False,
                  salt: bytes = None) -> None:
+        """
+        This function save the keys into a file for security. Can be encrypted with a passphrase.
+
+        :param key: The key to save.
+        :param filename: The filename to save the key to.
+        :param password: Password to encrypt the key. Defaults to None. Optional.
+        :param is_name_key: Whether this is a name key. Defaults to False. Optional.
+        :param salt: Salt for name key encryption. Required if is_name_key is True. Optional Depending.
+        """
         if is_name_key:
             with open(filename, "wb") as file:
                 file.write(salt)
@@ -41,7 +69,16 @@ class Program:
             with open(filename, "wb") as file:
                 file.write(key)
 
-    def load_key(self, filename: str, password: str = None, is_name_key: bool = False):
+    @staticmethod
+    def load_key(filename: str, password: str = None, is_name_key: bool = False):
+        """
+        Loads a key from a file.
+
+        :param filename: The filename to load the key from.
+        :param password: Password to decrypt the key. Defaults to None. Optional.
+        :param is_name_key: Whether this is a name key. Defaults to False. Optional.
+
+        """
         with open(filename, "rb") as file:
             if is_name_key:
                 salt = file.read(16)
@@ -58,15 +95,29 @@ class Program:
         return key.export_key()
 
     def encrypt_dir(self, directory: str, public_key: bytes, name_key: str, salt: bytes) -> str:
+        """
+        Encrypts an entire directory.
+        :param directory: The location of where your files are located at.
+        :param public_key: The public key generated using RSA.
+        :param name_key : The private key used to encrypt the file names.
+        :param salt: Salt for name encryption.
+
+        WARNING:
+        YOU MIGHT RISK RUINING YOUR ENTIRE SYSTEM AND CAUSING IRRECOVERABLE FILE LOSS.
+        ONLY RUN THIS FUNCTION WHEN YOU ARE ABSOLUTELY SURE.
+        """
+
+        # Creates aes key
         aes_key = get_random_bytes(16)
         rsa_key = RSA.import_key(public_key)
         cipher_rsa = PKCS1_OAEP.new(rsa_key)
         enc_aes_key = cipher_rsa.encrypt(aes_key)
 
+        # Recursively browse directories
         for root, dirs, files in os.walk(directory, topdown=False):
             for file_name in files:
                 file_path = os.path.join(root, file_name)
-                self.encrypt_file(file_path, aes_key, enc_aes_key, name_key, salt)
+                self.encrypt_file(file_path, aes_key, enc_aes_key, name_key, salt)  # Perform file encryption
 
             for dir_name in dirs:
                 dir_path = os.path.join(root, dir_name)
@@ -74,7 +125,9 @@ class Program:
                 encrypted_path = os.path.join(root, name_change)
                 os.rename(dir_path, encrypted_path)
                 print(f"Folder {dir_path} has been encrypted and renamed to {encrypted_path}")
+                # Perform filename encryption
 
+        # Perform root name encryption
         root_name = os.path.basename(directory)
         root_change = self.encrypt_name(root_name, name_key, salt)
         encrypted_root = os.path.join(os.path.dirname(directory), root_change)
@@ -84,6 +137,17 @@ class Program:
         return encrypted_root
 
     def decrypt_dir(self, encrypted_dir_path: str, private_key: bytes, name_key: str, salt: bytes) -> str:
+        """
+        Decrypts an entire encrypted directory.
+
+        :param encrypted_dir_path: The path of the encrypted directory.
+        :param private_key: The private key for decryption.
+        :param name_key: The key used to decrypt file and directory names.
+        :param salt: Salt for name decryption.
+
+        Returns:
+            str: The path of the decrypted directory.
+        """
         decrypted_root_name = self.decrypt_name(os.path.basename(encrypted_dir_path), name_key, salt)
         decrypted_root_path = os.path.join(os.path.dirname(encrypted_dir_path), decrypted_root_name)
         os.rename(encrypted_dir_path, decrypted_root_path)
@@ -104,6 +168,19 @@ class Program:
         return decrypted_root_path
 
     def encrypt_file(self, file_directory: str, aes_key: bytes, enc_aes_key: bytes, name_key: str, salt: bytes) -> None:
+        """
+        Encrypts a single file.
+
+        :param file_directory: The path of the file to encrypt.
+        :param aes_key: The AES key for file content encryption.
+        :param enc_aes_key: The encrypted AES key.
+        :param name_key: The key for encrypting the file name.
+        :param salt: Salt for name encryption.
+
+        WARNING:
+        THIS IS THE ACTUAL ENCRYPTION FUNCTION. DO NOT USE THIS UNLESS YOU ARE ABSOLUTELY SURE THAT YOU KNOW WHAT YOU ARE
+        DOING. THIS MAY POTENTIALLY LEAD TO IRRECOVERABLE FILE, DATA LOSS AND POTENTIALLY RUIN YOUR ENTIRE SYSTEM.
+        """
         with open(file_directory, "rb") as files:
             data = files.read()
 
@@ -123,6 +200,14 @@ class Program:
         print(f"File '{file_directory}' has been encrypted and renamed to '{encrypted_path}'")
 
     def decrypt_file(self, encrypted_file_path: str, private_key: bytes, name_key: str, salt: bytes) -> None:
+        """
+        Decrypts a single encrypted file.
+
+        :param encrypted_file_path: The path of the encrypted file.
+        :param private_key: The private key for decryption.
+        :param name_key: The key for decrypting the file name.
+        :param salt: Salt for name decryption.
+        """
         rsa_key = RSA.import_key(private_key)
         cipher_rsa = PKCS1_OAEP.new(rsa_key)
 
@@ -146,6 +231,13 @@ class Program:
         print(f"File {decrypted_file_path} has been decrypted.")
 
     def encrypt_name(self, filename: str, key: str, salt: bytes) -> str:
+        """
+        Encrypts the name of a file or directory.
+
+        :param salt: Salt for key derivation.
+        :param filename: The name to encrypt.
+        :param key: The key used for encryption.
+        """
         salted_key = self.derive_session_key(key, salt)
         cipher = AES.new(salted_key, AES.MODE_GCM)
         data = filename.encode("utf-8")
@@ -154,6 +246,13 @@ class Program:
         return base64.urlsafe_b64encode(cipher.nonce + tag + ciphertext).decode("utf-8")
 
     def decrypt_name(self, encrypted_filename: str, key: str, salt: bytes) -> str:
+        """
+        Decrypts the name of a file or directory.
+
+        :param salt: Salt for key derivation.
+        :param encrypted_filename: The encrypted name to decrypt.
+        :param key: The key used for decryption.
+        """
         salted_key = self.derive_session_key(key, salt)
         data = base64.urlsafe_b64decode(encrypted_filename.encode("utf-8"))
         nonce, tag, ciphertext = data[:16], data[16:32], data[32:]
@@ -161,7 +260,13 @@ class Program:
 
         return cipher.decrypt_and_verify(ciphertext, tag).decode("utf-8")
 
-    def get_directory(self) -> str:
+    @staticmethod
+    def get_directory() -> str:
+        """
+        Prompt users for directory name.
+
+        :return: Directory name
+        """
         while True:
             directory = input("Enter the directory path to perform encryption/decryption: ").strip()
             if not directory:
@@ -175,6 +280,9 @@ class Program:
             return directory
 
     def run(self):
+        """
+        Runs the program.
+        """
         while True:
             try:
                 choice = int(input("Encrypt(0) or Decrypt(1)? "))
